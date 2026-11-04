@@ -51,6 +51,9 @@ def create_app():
 
     @app.get("/api/products")
     def list_products():
+        # 장애 훈련용 스위치: 환경 변수 BREAK_PRODUCTS=1이면 헬스 체크는 정상인데 상품 API만 500 응답
+        if os.environ.get("BREAK_PRODUCTS") == "1":
+            return jsonify(error="장애 훈련용 오류"), 500
         rows = get_db().execute("SELECT id, name, price FROM products ORDER BY id").fetchall()
         return jsonify(version=APP_VERSION, items=[dict(r) for r in rows])
 
