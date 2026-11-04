@@ -80,6 +80,12 @@ Resources:
           set -eux
           dnf install -y docker git jq
           systemctl enable --now docker
+          # AL2023 docker 패키지에는 compose·buildx 플러그인이 없어 GitHub 릴리스에서 설치
+          P=/usr/local/lib/docker/cli-plugins; mkdir -p $P
+          curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o $P/docker-compose
+          BX=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest | jq -r .tag_name)
+          curl -fsSL https://github.com/docker/buildx/releases/download/$BX/buildx-$BX.linux-amd64 -o $P/docker-buildx
+          chmod +x $P/*
           # 스왑 2GB: Jenkins와 이미지 빌드가 동시에 돌 때 메모리 부족 방지
           fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
           echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
