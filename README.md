@@ -15,7 +15,7 @@ CI/CD 실습용 샘플 앱 (3서비스). 강사 템플릿 저장소이며, 수�
 ## 로컬 실행
 ```bash
 docker compose up -d --build
-curl localhost:8080/api/products
+curl localhost:8000/api/products
 ```
 
 ## 테스트
