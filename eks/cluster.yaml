@@ -1,0 +1,31 @@
+# EKS 클러스터 정의 (eksctl) — CloudShell에서 eks/create-cluster.sh로 생성
+# NAT 게이트웨이 없이 퍼블릭 서브넷에 노드를 두어 비용을 줄인다(실습용).
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: shop-eks
+  region: ap-northeast-2
+  version: "1.36"
+  tags: { Course: "03", Day: "3" }
+
+vpc:
+  nat: { gateway: Disable }
+
+# 작업용 EC2(Jenkins 서버)의 IAM 역할에 클러스터 관리자 권한을 준다 → 그 서버에서 kubectl 사용
+accessConfig:
+  authenticationMode: API_AND_CONFIG_MAP
+  accessEntries:
+    - principalARN: arn:aws:iam::ACCOUNT_ID:role/cicd-workstation-role-ap-northeast-2
+      accessPolicies:
+        - policyARN: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+          accessScope: { type: cluster }
+
+managedNodeGroups:
+  - name: ng-1
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 0
+    maxSize: 3
+    volumeSize: 20
+    privateNetworking: false
+    tags: { Course: "03", Day: "3" }

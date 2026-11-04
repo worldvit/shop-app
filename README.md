@@ -11,6 +11,7 @@ CI/CD 실습용 샘플 앱 (3서비스). 강사 템플릿 저장소이며, 수�
 | `jenkins/` | 실습용 Jenkins 이미지·실행 스크립트, webhook 중계 스크립트 |
 | `infra/` | 작업용 EC2·ECS 기반 CloudFormation 템플릿 |
 | `ecs/` | 태스크 정의, 서비스 생성·배포·무중단 확인·정리 스크립트 |
+| `eks/` | EKS 클러스터 정의(eksctl), Argo CD 설치·UI, 클러스터 삭제 스크립트 |
 | `solutions/dayN/` | 일차별 정답 파일 (처음부터 공개) |
 | `grade/` | 일차별 채점·정리 확인 스크립트 |
 | `rescue/` | 앞 실습을 못 끝냈을 때 다음 실습 시작점 스크립트 |

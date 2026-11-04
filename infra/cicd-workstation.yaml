@@ -42,7 +42,13 @@ Resources:
                   - ecs:RegisterTaskDefinition
                   - ecs:ListServiceDeployments
                   - ecs:DescribeServiceDeployments
+                  - eks:DescribeCluster        # Day 3: kubeconfig 만들기 (클러스터 안 권한은 EKS 액세스 항목이 정함)
+                  - eks:ListClusters
                 Resource: "*"
+              # ECR 관리형 정책(PowerUser)에는 저장소 생성 권한이 없어 shop/* 저장소 생성만 추가로 허용
+              - Effect: Allow
+                Action: [ecr:CreateRepository, ecr:TagResource]
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/shop/*
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !Sub arn:aws:iam::${AWS::AccountId}:role/shop-ecs-exec-role-*
@@ -106,6 +112,9 @@ Resources:
           BX=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest | jq -r .tag_name)
           curl -fsSL https://github.com/docker/buildx/releases/download/$BX/buildx-$BX.linux-amd64 -o $P/docker-buildx
           chmod +x $P/*
+          # kubectl (Day 3~4 EKS) — 1.36 계열 최신 패치
+          KV=$(curl -fsSL https://dl.k8s.io/release/stable-1.36.txt)
+          curl -fsSL -o /usr/local/bin/kubectl https://dl.k8s.io/release/$KV/bin/linux/amd64/kubectl && chmod +x /usr/local/bin/kubectl
           # 스왑 2GB: Jenkins와 이미지 빌드가 동시에 돌 때 메모리 부족 방지
           fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
           echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
