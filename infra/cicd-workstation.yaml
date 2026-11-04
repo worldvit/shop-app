@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CI/CD 실습용 작업 서버 (Jenkins 겸용). 기본 VPC, 인바운드 포트 없음, Session Manager 접속.
+Description: CI/CD 실습용 작업 서버 (Jenkins 겸용). 기본 VPC, 터미널은 Session Manager, UI(8080·8081)는 내 IP에서만 접속.
 
 Parameters:
   LatestAmiId:
@@ -8,6 +8,11 @@ Parameters:
   InstanceType:
     Type: String
     Default: t3.medium
+  MyIpCidr:
+    Type: String
+    Description: 내 PC의 공인 IP 뒤에 /32 (예 203.0.113.10/32). Jenkins(8080)·Argo CD(8081) UI를 이 주소에만 연다.
+    AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/32$
+    ConstraintDescription: IPv4 주소 뒤에 /32를 붙여 입력
 
 Resources:
   WorkstationRole:
@@ -35,7 +40,10 @@ Resources:
   WorkstationSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: cicd-workstation - no inbound
+      GroupDescription: cicd-workstation - Jenkins and Argo CD UI from my IP only
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 8080, ToPort: 8080, CidrIp: !Ref MyIpCidr, Description: Jenkins UI }
+        - { IpProtocol: tcp, FromPort: 8081, ToPort: 8081, CidrIp: !Ref MyIpCidr, Description: Argo CD UI }
       Tags:
         - { Key: Name, Value: cicd-workstation-sg }
         - { Key: Course, Value: "03" }
@@ -84,3 +92,6 @@ Outputs:
   InstanceId:
     Value: !Ref Workstation
     Description: Session Manager 접속 대상
+  JenkinsUrl:
+    Value: !Sub http://${Workstation.PublicIp}:8080
+    Description: Jenkins UI 주소 (서버를 중지 후 다시 시작하면 IP가 바뀌므로 EC2 콘솔에서 확인)
