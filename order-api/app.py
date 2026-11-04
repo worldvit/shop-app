@@ -43,6 +43,9 @@ def create_app():
 
     @app.get("/api/orders")
     def list_orders():
+        # 장애 훈련 ④용 스위치: 헬스 체크는 정상이고 주문 목록만 500을 돌려준다
+        if os.environ.get("BREAK_ORDERS") == "1":
+            return jsonify(error="장애 훈련용 오류"), 500
         rows = get_db().execute("SELECT id, product_id, qty FROM orders ORDER BY id").fetchall()
         return jsonify(version=APP_VERSION, items=[dict(r) for r in rows])
 

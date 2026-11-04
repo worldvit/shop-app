@@ -13,5 +13,6 @@ if aws sts get-caller-identity --query Arn --output text | grep -q cicd-workstat
   echo "이 스크립트는 CloudShell에서 실행하세요 (작업용 EC2에서는 실행하지 않음)"; exit 1
 fi
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-sed "s/ACCOUNT_ID/$ACCOUNT/" eks/cluster.yaml > /tmp/cluster.yaml
+# 노드 수: 기본 2대. Day 4처럼 Pod가 많을 때는 NODES=3 bash eks/create-cluster.sh
+sed -e "s/ACCOUNT_ID/$ACCOUNT/" -e "s/desiredCapacity: 2/desiredCapacity: ${NODES:-2}/" eks/cluster.yaml > /tmp/cluster.yaml
 eksctl create cluster -f /tmp/cluster.yaml

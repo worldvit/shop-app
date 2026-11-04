@@ -1,0 +1,92 @@
+// Day 4 정답: 브랜치별로 하는 일이 다르다
+//   main 이외 브랜치·PR : Test만
+//   main               : Test → Build & Push → dev 매니페스트 커밋 → 승인 대기 → prod 매니페스트 커밋
+// 배포는 Argo CD가 하고, order-api는 Argo Rollouts 카나리 단계로 바뀐다.
+def SERVICES = ['frontend', 'product-api', 'order-api']
+
+def buildAndPush(String svc) {
+  sh """
+    docker build --target runtime --build-arg APP_VERSION=${env.TAG} \
+      -t ${env.REGISTRY}/shop/${svc}:${env.TAG} ${svc}
+    docker push ${env.REGISTRY}/shop/${svc}:${env.TAG}
+  """
+}
+
+// 매니페스트 저장소의 overlays/<환경> 이미지 태그를 바꿔 커밋한다
+def updateManifest(String target) {
+  withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
+    sh """
+      rm -rf manifests
+      git clone -q https://\$GH_USER:\$GH_TOKEN@github.com/\$GH_USER/shop-manifests.git manifests
+      cd manifests
+      ACCOUNT_ID=\${REGISTRY%%.*} bash set-images.sh ${target} \$TAG
+      git config user.name  "jenkins"
+      git config user.email "jenkins@shop.local"
+      git commit -am "deploy(${target}): shop/* \$TAG" || echo "변경 없음"
+      git push -q origin main
+    """
+  }
+}
+
+pipeline {
+  agent any
+  options { timestamps() }
+  environment {
+    AWS_REGION = 'ap-northeast-2'
+  }
+
+  stages {
+    stage('Test') {
+      parallel {
+        stage('frontend')    { steps { sh 'docker build --target test -t test-frontend frontend' } }
+        stage('product-api') { steps { sh 'docker build --target test -t test-product-api product-api' } }
+        stage('order-api')   { steps { sh 'docker build --target test -t test-order-api order-api' } }
+      }
+    }
+
+    stage('ECR Login') {
+      when { branch 'main' }
+      steps {
+        script {
+          def account = sh(returnStdout: true, script: 'aws sts get-caller-identity --query Account --output text').trim()
+          env.REGISTRY = "${account}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+          env.TAG = env.GIT_COMMIT.take(7)
+        }
+        sh 'aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY'
+      }
+    }
+
+    stage('Build & Push') {
+      when { branch 'main' }
+      steps {
+        script {
+          parallel SERVICES.collectEntries { svc -> [(svc): { buildAndPush(svc) }] }
+        }
+      }
+    }
+
+    stage('Deploy dev') {
+      when { branch 'main' }
+      steps { script { updateManifest('dev') } }
+    }
+
+    stage('Approve prod') {
+      when { branch 'main' }
+      steps {
+        // 30분 안에 아무도 누르지 않으면 이 빌드는 중단(ABORTED)되고 prod는 그대로다
+        timeout(time: 30, unit: 'MINUTES') {
+          input message: "dev 확인 후 ${env.TAG}을(를) prod에 배포할까요?", ok: '배포'
+        }
+      }
+    }
+
+    stage('Deploy prod') {
+      when { branch 'main' }
+      steps { script { updateManifest('prod') } }
+    }
+  }
+
+  post {
+    success { echo "매니페스트 갱신 완료: ${env.TAG ?: '테스트만 실행'}" }
+  }
+}
