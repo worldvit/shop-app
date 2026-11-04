@@ -1,7 +1,7 @@
 #!/bin/bash
 # Argo CD 설치 + UI 열기 — 작업용 EC2(Session Manager)에서 실행
 set -euo pipefail
-ARGOCD_VERSION=${ARGOCD_VERSION:-v3.5.0}
+ARGOCD_VERSION=${ARGOCD_VERSION:-v3.5.7}
 aws eks update-kubeconfig --name shop-eks --region ap-northeast-2
 kubectl get nodes
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
