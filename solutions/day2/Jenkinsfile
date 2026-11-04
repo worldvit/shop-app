@@ -52,6 +52,6 @@ pipeline {
 
   post {
     success { echo "배포 완료: shop/*:${env.TAG}" }
-    failure { echo '실패 — 테스트·빌드 오류이거나 서킷 브레이커가 롤백함 (콘솔 로그 확인)' }
+    failure { echo '실패 — 테스트·빌드 오류이거나 자동 롤백됨 (콘솔 로그 확인)' }
   }
 }

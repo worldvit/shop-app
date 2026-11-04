@@ -8,6 +8,7 @@ for s in frontend product-api order-api; do
     && echo "[$s] 삭제 요청" || echo "[$s] 서비스 없음"
 done
 aws ecs wait services-inactive --cluster shop --services frontend product-api order-api 2>/dev/null
+aws cloudwatch delete-alarms --alarm-names shop-product-api-5xx 2>/dev/null   # 심화 2에서 만든 알람
 echo "서비스 삭제 완료 → 스택 삭제 (3~5분)"
 aws cloudformation delete-stack --stack-name shop-ecs
 aws cloudformation wait stack-delete-complete --stack-name shop-ecs && echo "[OK] shop-ecs 스택 삭제 완료"

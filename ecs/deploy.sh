@@ -34,6 +34,6 @@ for s in $SERVICES; do
   NOW=$(aws ecs describe-services --cluster shop --services $s \
         --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition | [0]' --output text)
   if [ "$NOW" = "${NEW[$s]}" ]; then echo "[$s] 성공: ${NOW##*/}"
-  else echo "[$s] 실패: 서킷 브레이커가 ${NOW##*/} 로 롤백함"; rc=1; fi
+  else echo "[$s] 실패: 자동 롤백(서킷 브레이커 또는 알람)으로 ${NOW##*/} 에 머묾"; rc=1; fi
 done
 exit $rc
