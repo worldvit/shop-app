@@ -1,0 +1,35 @@
+// 심화 2 정답: 변경된 서비스 폴더만 테스트·빌드·푸시 (when { changeset })
+pipeline {
+  agent any
+  options { timestamps() }
+  environment { AWS_REGION = 'ap-northeast-2' }
+
+  stages {
+    stage('ECR Login') {
+      steps {
+        script {
+          def account = sh(returnStdout: true, script: 'aws sts get-caller-identity --query Account --output text').trim()
+          env.REGISTRY = "${account}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+          env.TAG = env.GIT_COMMIT.take(7)
+        }
+        sh 'aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY'
+      }
+    }
+    stage('Services') {
+      parallel {
+        stage('frontend') {
+          when { changeset 'frontend/**' }
+          steps { sh 'S=frontend; docker build --target test $S && docker build --target runtime --build-arg APP_VERSION=$TAG -t $REGISTRY/shop/$S:$TAG $S && docker push $REGISTRY/shop/$S:$TAG' }
+        }
+        stage('product-api') {
+          when { changeset 'product-api/**' }
+          steps { sh 'S=product-api; docker build --target test $S && docker build --target runtime --build-arg APP_VERSION=$TAG -t $REGISTRY/shop/$S:$TAG $S && docker push $REGISTRY/shop/$S:$TAG' }
+        }
+        stage('order-api') {
+          when { changeset 'order-api/**' }
+          steps { sh 'S=order-api; docker build --target test $S && docker build --target runtime --build-arg APP_VERSION=$TAG -t $REGISTRY/shop/$S:$TAG $S && docker push $REGISTRY/shop/$S:$TAG' }
+        }
+      }
+    }
+  }
+}

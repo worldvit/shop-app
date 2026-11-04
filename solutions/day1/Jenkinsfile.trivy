@@ -1,0 +1,65 @@
+// 심화 1 정답: 이미지 빌드 → Trivy 스캔(CRITICAL이면 실패) → 통과한 이미지만 푸시
+def SERVICES = ['frontend', 'product-api', 'order-api']
+
+pipeline {
+  agent any
+  options { timestamps() }
+  environment {
+    AWS_REGION = 'ap-northeast-2'
+    TRIVY_IMAGE = 'aquasec/trivy:latest'   // 강의 직전 버전 고정 권장
+  }
+
+  stages {
+    stage('Test') {
+      parallel {
+        stage('frontend')    { steps { sh 'docker build --target test -t test-frontend frontend' } }
+        stage('product-api') { steps { sh 'docker build --target test -t test-product-api product-api' } }
+        stage('order-api')   { steps { sh 'docker build --target test -t test-order-api order-api' } }
+      }
+    }
+    stage('ECR Login') {
+      steps {
+        script {
+          def account = sh(returnStdout: true, script: 'aws sts get-caller-identity --query Account --output text').trim()
+          env.REGISTRY = "${account}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+          env.TAG = env.GIT_COMMIT.take(7)
+        }
+        sh 'aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY'
+      }
+    }
+    stage('Build') {
+      steps {
+        script {
+          parallel SERVICES.collectEntries { svc -> [(svc): {
+            sh "docker build --target runtime --build-arg APP_VERSION=${env.TAG} -t ${env.REGISTRY}/shop/${svc}:${env.TAG} ${svc}"
+          }] }
+        }
+      }
+    }
+    stage('Scan') {
+      steps {
+        script {
+          SERVICES.each { svc ->
+            sh """
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache \
+                ${env.TRIVY_IMAGE} image --severity CRITICAL --exit-code 1 --ignore-unfixed --no-progress \
+                ${env.REGISTRY}/shop/${svc}:${env.TAG}
+            """
+          }
+        }
+      }
+    }
+    stage('Push') {
+      steps {
+        script {
+          parallel SERVICES.collectEntries { svc -> [(svc): {
+            sh "docker push ${env.REGISTRY}/shop/${svc}:${env.TAG}"
+          }] }
+        }
+      }
+    }
+  }
+  post {
+    failure { echo '테스트 또는 취약점 검사 실패 — 이미지를 푸시하지 않았습니다' }
+  }
+}

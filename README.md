@@ -11,6 +11,8 @@ CI/CD 실습용 샘플 앱 (3서비스). 강사 템플릿 저장소이며, 수�
 | `jenkins/` | 실습용 Jenkins 이미지·실행 스크립트, webhook 중계 스크립트 |
 | `infra/` | 작업용 EC2 CloudFormation 템플릿 |
 | `solutions/dayN/` | 일차별 정답 파일 (처음부터 공개) |
+| `grade/` | 일차별 채점·정리 확인 스크립트 |
+| `rescue/` | 앞 실습을 못 끝냈을 때 다음 실습 시작점 스크립트 |
 
 ## 로컬 실행
 ```bash
