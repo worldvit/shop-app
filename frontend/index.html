@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shop</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+    li { margin: 4px 0; }
+    .ver { color: #777; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Shop <span class="ver">frontend __VERSION__</span></h1>
+  <h2>상품 <span class="ver" id="pv"></span></h2>
+  <ul id="products"></ul>
+  <h2>주문 <span class="ver" id="ov"></span></h2>
+  <ul id="orders"></ul>
+  <script>
+    async function load(path, listId, verId, fmt) {
+      const res = await fetch(path);
+      document.getElementById(verId).textContent = res.headers.get('X-App-Version') || '';
+      const data = await res.json();
+      document.getElementById(listId).innerHTML =
+        data.items.map(i => '<li>' + fmt(i) + '</li>').join('') || '<li>없음</li>';
+    }
+    load('/api/products', 'products', 'pv', i => i.name + ' ' + i.price.toLocaleString() + '원');
+    load('/api/orders', 'orders', 'ov', i => '#' + i.id + ' 상품 ' + i.product_id + ' × ' + i.qty);
+  </script>
+</body>
+</html>

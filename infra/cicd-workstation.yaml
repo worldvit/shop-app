@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CI/CD 실습용 작업 서버 (Jenkins 겸용). 기본 VPC, 인바운드 포트 없음, Session Manager 접속.
+
+Parameters:
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+  InstanceType:
+    Type: String
+    Default: t3.medium
+
+Resources:
+  WorkstationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cicd-workstation-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+      Tags:
+        - { Key: Course, Value: "03" }
+        - { Key: Role, Value: workstation }
+
+  WorkstationProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref WorkstationRole]
+
+  WorkstationSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: cicd-workstation - no inbound
+      Tags:
+        - { Key: Name, Value: cicd-workstation-sg }
+        - { Key: Course, Value: "03" }
+        - { Key: Role, Value: workstation }
+
+  WorkstationLT:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 2   # Jenkins 컨테이너 안에서도 IAM 역할 자격 증명을 받기 위해 2로 설정
+
+  Workstation:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref WorkstationProfile
+      SecurityGroupIds: [!GetAtt WorkstationSG.GroupId]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WorkstationLT
+        Version: !GetAtt WorkstationLT.LatestVersionNumber
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs: { VolumeSize: 30, VolumeType: gp3, Encrypted: true }
+      Tags:
+        - { Key: Name, Value: cicd-workstation }
+        - { Key: Course, Value: "03" }
+        - { Key: Role, Value: workstation }
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -eux
+          dnf install -y docker git jq
+          systemctl enable --now docker
+          # 스왑 2GB: Jenkins와 이미지 빌드가 동시에 돌 때 메모리 부족 방지
+          fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+          echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+          # Session Manager 사용자(ssm-user)가 sudo 없이 docker를 쓰도록 미리 그룹 지정
+          getent group docker && (id ssm-user || useradd -m ssm-user) && usermod -aG docker ssm-user
+          echo 'ssm-user ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ssm-agent-users
+          mkdir -p /var/jenkins_home && chown 1000:1000 /var/jenkins_home
+
+Outputs:
+  InstanceId:
+    Value: !Ref Workstation
+    Description: Session Manager 접속 대상
