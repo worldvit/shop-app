@@ -1,0 +1,27 @@
+{
+  "family": "shop-frontend",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "runtimePlatform": { "cpuArchitecture": "X86_64", "operatingSystemFamily": "LINUX" },
+  "executionRoleArn": "arn:aws:iam::__ACCOUNT__:role/shop-ecs-exec-role-ap-northeast-2",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "__ACCOUNT__.dkr.ecr.ap-northeast-2.amazonaws.com/shop/frontend:__TAG__",
+      "essential": true,
+      "portMappings": [{ "containerPort": 80, "protocol": "tcp" }],
+      "stopTimeout": 20,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/shop",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "frontend"
+        }
+      }
+    }
+  ],
+  "tags": [{ "key": "Course", "value": "03" }, { "key": "Day", "value": "2" }]
+}

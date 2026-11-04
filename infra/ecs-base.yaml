@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  shop 앱 ECS 기반 — 기본 VPC 위에 ALB(경로 라우팅), 대상 그룹, ECS 클러스터, 실행 역할, 로그 그룹.
+  NAT 없이 퍼블릭 서브넷 + 퍼블릭 IP로 Fargate 태스크가 ECR에서 이미지를 받는다.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 기본 VPC ID
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: 서로 다른 AZ의 퍼블릭 서브넷 2개 이상
+
+Resources:
+  # ---------- 보안 그룹 ----------
+  AlbSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: shop ALB - HTTP from anywhere, test port 8080 for blue/green
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: production }
+        - { IpProtocol: tcp, FromPort: 8080, ToPort: 8080, CidrIp: 0.0.0.0/0, Description: blue/green test listener }
+      Tags: [{ Key: Name, Value: shop-alb-sg }]
+
+  TaskSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: shop ECS tasks - only from ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, SourceSecurityGroupId: !Ref AlbSG, Description: frontend }
+        - { IpProtocol: tcp, FromPort: 5000, ToPort: 5000, SourceSecurityGroupId: !Ref AlbSG, Description: api }
+      Tags: [{ Key: Name, Value: shop-task-sg }]
+
+  # ---------- ALB ----------
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: shop-alb
+      Scheme: internet-facing
+      Type: application
+      Subnets: !Ref SubnetIds
+      SecurityGroups: [!Ref AlbSG]
+
+  # 대상 그룹: 헬스 체크를 짧게(10초 간격, 2회) 잡아 실습 시간 안에 롤백이 보이게 한다
+  FrontendTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: shop-frontend
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 80
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "15" }
+
+  ProductTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: shop-product-api
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 5000
+      TargetType: ip
+      HealthCheckPath: /api/products/health
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "15" }
+
+  OrderBlueTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: shop-order-api-blue
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 5000
+      TargetType: ip
+      HealthCheckPath: /api/orders/health
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "15" }
+
+  # 블루/그린용 대체 대상 그룹 (order-api, 심화·시연용)
+  OrderGreenTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: shop-order-api-green
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 5000
+      TargetType: ip
+      HealthCheckPath: /api/orders/health
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "15" }
+
+  # 운영 리스너: 기본은 frontend, 경로 규칙으로 API 분기
+  ProdListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - { Type: forward, TargetGroupArn: !Ref FrontendTG }
+
+  ProductRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ProdListener
+      Priority: 10
+      Conditions: [{ Field: path-pattern, PathPatternConfig: { Values: ["/api/products*"] } }]
+      Actions: [{ Type: forward, TargetGroupArn: !Ref ProductTG }]
+
+  OrderRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ProdListener
+      Priority: 20
+      Conditions: [{ Field: path-pattern, PathPatternConfig: { Values: ["/api/orders*"] } }]
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - { TargetGroupArn: !Ref OrderBlueTG, Weight: 100 }
+              - { TargetGroupArn: !Ref OrderGreenTG, Weight: 0 }
+
+  # 테스트 리스너(8080): 블루/그린 배포 중 새 버전만 미리 확인
+  TestListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 8080
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig: { StatusCode: "404", ContentType: text/plain, MessageBody: "test listener" }
+
+  OrderTestRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref TestListener
+      Priority: 20
+      Conditions: [{ Field: path-pattern, PathPatternConfig: { Values: ["/api/orders*"] } }]
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - { TargetGroupArn: !Ref OrderBlueTG, Weight: 0 }
+              - { TargetGroupArn: !Ref OrderGreenTG, Weight: 100 }
+
+  # ---------- ECS ----------
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: shop
+      CapacityProviders: [FARGATE]
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/shop
+      RetentionInDays: 1
+
+  # 태스크 실행 역할: ECS가 ECR에서 이미지를 받고 로그를 보낼 때 쓰는 역할
+  TaskExecRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub shop-ecs-exec-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - { Effect: Allow, Principal: { Service: ecs-tasks.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # 블루/그린 배포 때 ECS가 리스너 규칙 가중치를 바꿀 수 있게 하는 인프라 역할
+  EcsInfraRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub shop-ecs-infra-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - { Effect: Allow, Principal: { Service: ecs.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonECSInfrastructureRolePolicyForLoadBalancers
+
+Outputs:
+  AlbDns: { Value: !GetAtt Alb.DNSName }
+  ClusterName: { Value: !Ref Cluster }
+  Subnets: { Value: !Join [",", !Ref SubnetIds] }
+  TaskSG: { Value: !Ref TaskSG }
+  TaskExecRoleArn: { Value: !GetAtt TaskExecRole.Arn }
+  EcsInfraRoleArn: { Value: !GetAtt EcsInfraRole.Arn }
+  FrontendTG: { Value: !Ref FrontendTG }
+  ProductTG: { Value: !Ref ProductTG }
+  OrderBlueTG: { Value: !Ref OrderBlueTG }
+  OrderGreenTG: { Value: !Ref OrderGreenTG }
+  OrderRule: { Value: !Ref OrderRule }
+  OrderTestRule: { Value: !Ref OrderTestRule }

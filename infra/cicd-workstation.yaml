@@ -28,6 +28,26 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+      Policies:
+        # Jenkins 배포 단계용 최소 권한: 태스크 정의 새 리비전 등록 + 서비스 업데이트만 허용
+        - PolicyName: ecs-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:UpdateService
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                  - ecs:ListServiceDeployments
+                  - ecs:DescribeServiceDeployments
+                Resource: "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub arn:aws:iam::${AWS::AccountId}:role/shop-ecs-exec-role-*
+                Condition:
+                  StringEquals: { iam:PassedToService: ecs-tasks.amazonaws.com }
       Tags:
         - { Key: Course, Value: "03" }
         - { Key: Role, Value: workstation }

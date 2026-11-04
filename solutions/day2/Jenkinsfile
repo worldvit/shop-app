@@ -1,0 +1,57 @@
+// Day 2 정답: 테스트 → 이미지 빌드 → ECR 푸시 → ECS 롤링 배포(main 브랜치만)
+def SERVICES = ['frontend', 'product-api', 'order-api']
+
+def buildAndPush(String svc) {
+  sh """
+    docker build --target runtime --build-arg APP_VERSION=${env.TAG} \
+      -t ${env.REGISTRY}/shop/${svc}:${env.TAG} ${svc}
+    docker push ${env.REGISTRY}/shop/${svc}:${env.TAG}
+  """
+}
+
+pipeline {
+  agent any
+  options { timestamps() }
+  environment {
+    AWS_REGION = 'ap-northeast-2'
+  }
+
+  stages {
+    stage('Test') {
+      parallel {
+        stage('frontend')    { steps { sh 'docker build --target test -t test-frontend frontend' } }
+        stage('product-api') { steps { sh 'docker build --target test -t test-product-api product-api' } }
+        stage('order-api')   { steps { sh 'docker build --target test -t test-order-api order-api' } }
+      }
+    }
+
+    stage('ECR Login') {
+      steps {
+        script {
+          def account = sh(returnStdout: true, script: 'aws sts get-caller-identity --query Account --output text').trim()
+          env.REGISTRY = "${account}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+          env.TAG = env.GIT_COMMIT.take(7)
+        }
+        sh 'aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY'
+      }
+    }
+
+    stage('Build & Push') {
+      steps {
+        script {
+          parallel SERVICES.collectEntries { svc -> [(svc): { buildAndPush(svc) }] }
+        }
+      }
+    }
+
+    stage('Deploy ECS') {
+      when { branch 'main' }
+      steps { sh 'bash ecs/deploy.sh $TAG' }
+    }
+  }
+
+  post {
+    success { echo "배포 완료: shop/*:${env.TAG}" }
+    failure { echo '실패 — 테스트·빌드 오류이거나 서킷 브레이커가 롤백함 (콘솔 로그 확인)' }
+  }
+}
