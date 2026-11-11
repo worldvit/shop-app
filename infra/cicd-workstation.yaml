@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CI/CD 실습용 작업 서버 (Jenkins 겸용). 기본 VPC, 터미널은 Session Manager, UI(8080·8081)는 내 IP에서만 접속.
+Description: CI/CD lab workstation (runs Jenkins). Default VPC, terminal via Session Manager, UI ports 8080/8081 open to my IP only.
 
 Parameters:
   LatestAmiId:
@@ -10,9 +10,9 @@ Parameters:
     Default: t3.medium
   MyIpCidr:
     Type: String
-    Description: 내 PC의 공인 IP 뒤에 /32 (예 203.0.113.10/32). Jenkins(8080)·Argo CD(8081) UI를 이 주소에만 연다.
+    Description: My public IP followed by /32 (e.g. 203.0.113.10/32). Jenkins (8080) and Argo CD (8081) UI are open to this address only.
     AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/32$
-    ConstraintDescription: IPv4 주소 뒤에 /32를 붙여 입력
+    ConstraintDescription: Enter an IPv4 address followed by /32
 
 Resources:
   WorkstationRole:
@@ -126,7 +126,7 @@ Resources:
 Outputs:
   InstanceId:
     Value: !Ref Workstation
-    Description: Session Manager 접속 대상
+    Description: Session Manager target instance
   JenkinsUrl:
     Value: !Sub http://${Workstation.PublicIp}:8080
-    Description: Jenkins UI 주소 (서버를 중지 후 다시 시작하면 IP가 바뀌므로 EC2 콘솔에서 확인)
+    Description: Jenkins UI URL (the IP changes after stop/start - check the EC2 console)

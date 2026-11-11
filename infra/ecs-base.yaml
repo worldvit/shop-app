@@ -1,15 +1,15 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  shop 앱 ECS 기반 — 기본 VPC 위에 ALB(경로 라우팅), 대상 그룹, ECS 클러스터, 실행 역할, 로그 그룹.
-  NAT 없이 퍼블릭 서브넷 + 퍼블릭 IP로 Fargate 태스크가 ECR에서 이미지를 받는다.
+  shop app ECS base - ALB with path routing, target groups, ECS cluster, execution role and log group on the default VPC.
+  No NAT - Fargate tasks pull images from ECR through public subnets with public IPs.
 
 Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id
-    Description: 기본 VPC ID
+    Description: Default VPC ID
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: 서로 다른 AZ의 퍼블릭 서브넷 2개 이상
+    Description: Two or more public subnets in different AZs
 
 Resources:
   # ---------- 보안 그룹 ----------
